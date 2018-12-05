@@ -6,7 +6,9 @@ Please see LICENSE file in the project root for terms.
 """
 
 import numpy as np
+import pandas as pd
 import os
+from tqdm import tqdm
 import sys
 import argparse
 import glob
@@ -14,8 +16,8 @@ import time
 from PIL import Image
 from StringIO import StringIO
 import caffe
-
-
+import visualize_result 
+from sklearn.metrics import classification_report, confusion_matrix    
 def resize_image(data, sz=(256, 256)):
     """
     Resize image. Please use this resize logic for best results instead of the 
@@ -86,10 +88,13 @@ def main(argv):
     parser = argparse.ArgumentParser()
     # Required arguments: input file.
     parser.add_argument(
-        "input_file",
+        "--input_file",
         help="Path to the input image file"
     )
-
+    parser.add_argument(
+        "--input_label_file",
+        help="Path to the input label file"
+    )
     # Optional arguments.
     parser.add_argument(
         "--model_def",
@@ -99,9 +104,14 @@ def main(argv):
         "--pretrained_model",
         help="Trained model weights file."
     )
+    parser.add_argument(
+        "--threshold",
+        default=0.5,
+        help="Path to the input image file"
+    )
 
     args = parser.parse_args()
-    image_data = open(args.input_file).read()
+    
 
     # Pre-load caffe model.
     nsfw_net = caffe.Net(args.model_def,  # pylint: disable=invalid-name
@@ -115,12 +125,43 @@ def main(argv):
     caffe_transformer.set_raw_scale('data', 255)  # rescale from [0, 1] to [0, 255]
     caffe_transformer.set_channel_swap('data', (2, 1, 0))  # swap channels from RGB to BGR
 
-    # Classify.
-    scores = caffe_preprocess_and_compute(image_data, caffe_transformer=caffe_transformer, caffe_net=nsfw_net, output_layers=['prob'])
+    if args.input_file is not None:
+        image_data = open(args.input_file).read()
+        # Classify.
+        scores = caffe_preprocess_and_compute(image_data, caffe_transformer=caffe_transformer, caffe_net=nsfw_net, output_layers=['prob'])
+        print "NSFW score:  " , scores[1]
+
+    elif args.input_label_file is not None: 
+        scores = []
+        df = pd.read_csv(args.input_label_file, header=None, delimiter=' ', names=['file_name', 'label'])
+        for i in tqdm(range(len(df))):
+            with open(df.iloc[i, 0], 'rb') as f:
+                image = f.read()
+                scores.append(caffe_preprocess_and_compute(image, 
+                                                           caffe_transformer=caffe_transformer, 
+                                                           caffe_net=nsfw_net, 
+                                                           output_layers=['prob'])[1])
+        df['scores'] = scores
+        df['NSFW'] = df['scores'] >= args.threshold
+        # From boolean to int
+        df['NSFW'] = df['NSFW'] + 0
+        
+        target_names = ['nosexy', 'sexy']
+        cnf_matrix = confusion_matrix(df['label'], df['NSFW'])
+        y = df['label']
+        y_pred = df['NSFW']
+        report = classification_report(y, y_pred, target_names=target_names)
+        visualize_result.save_confusion_matrix_classification_report(cnf_matrix=cnf_matrix, 
+                                                                     classification_report=report,
+                                                                     class_names=target_names,
+                                                                     file_name='cnf_matrix')
+        df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
+            'result.txt', sep=' ', header=None, index=None)
+        print("Test:", len(df))
 
     # Scores is the array containing SFW / NSFW image probabilities
     # scores[1] indicates the NSFW probability
-    print "NSFW score:  " , scores[1]
+    
 
 
 
