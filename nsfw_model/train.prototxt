@@ -10,12 +10,36 @@ layer {
   }
   transform_param {
     crop_size: 224
-    scale: 0.00390625
+    mean_value: 104
+    mean_value: 117
+    mean_value: 123
+    mirror: true
   }
   image_data_param {
-    source: "/home/ubuntu/dai/train.txt"
+    source: "/jet/prs/workspace/dataset/train_val/train.txt"
     batch_size: 32
     shuffle: true
+  }
+}
+layer {
+  name: "data"
+  type: "ImageData"
+  top: "data"
+  top: "label"
+  include {
+    phase: TEST
+  }
+  transform_param {
+    crop_size: 224
+    mean_value: 104
+    mean_value: 117
+    mean_value: 123
+    mirror: false
+  }
+  image_data_param {
+    source: "/jet/prs/workspace/dataset/train_val/test.txt"
+    batch_size: 32
+    shuffle: false
   }
 }
 layer {
@@ -3497,6 +3521,17 @@ layer {
   type: "SoftmaxWithLoss"
   bottom: "fc_nsfw"
   bottom: "label"
+  include {
+    phase: TRAIN
+  }
   top: "loss"
 }
-
+layer {
+  name: "prob"
+  type: "Softmax"
+  bottom: "fc_nsfw"
+  top: "prob"
+  include {
+    phase: TEST
+  }
+}

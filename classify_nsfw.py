@@ -14,10 +14,19 @@ import argparse
 import glob
 import time
 from PIL import Image
-from StringIO import StringIO
+
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import BytesIO as StringIO
+    
 import caffe
-import visualize_result 
-from sklearn.metrics import classification_report, confusion_matrix    
+#import visualize_result 
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve    
 def resize_image(data, sz=(256, 256)):
     """
     Resize image. Please use this resize logic for best results instead of the 
@@ -29,8 +38,9 @@ def resize_image(data, sz=(256, 256)):
     :returns bytearray:
         A byte array with the resized image
     """
-    img_data = str(data)
+    img_data = data
     im = Image.open(StringIO(img_data))
+    
     if im.mode != "RGB":
         im = im.convert('RGB')
     imr = im.resize(sz, resample=Image.BILINEAR)
@@ -66,8 +76,8 @@ def caffe_preprocess_and_compute(pimg, caffe_transformer=None, caffe_net=None,
 
         H, W, _ = image.shape
         _, _, h, w = caffe_net.blobs['data'].data.shape
-        h_off = max((H - h) / 2, 0)
-        w_off = max((W - w) / 2, 0)
+        h_off = int(max((H - h) / 2, 0))
+        w_off = int(max((W - w) / 2, 0))
         crop = image[h_off:h_off + h, w_off:w_off + w, :]
         transformed_image = caffe_transformer.preprocess('data', crop)
         transformed_image.shape = (1,) + transformed_image.shape
@@ -107,6 +117,7 @@ def main(argv):
     parser.add_argument(
         "--threshold",
         default=0.5,
+        type=float,
         help="Path to the input image file"
     )
 
@@ -126,10 +137,11 @@ def main(argv):
     caffe_transformer.set_channel_swap('data', (2, 1, 0))  # swap channels from RGB to BGR
 
     if args.input_file is not None:
-        image_data = open(args.input_file).read()
+        with open(args.input_file, 'rb') as f:
+            image_data = f.read()
         # Classify.
-        scores = caffe_preprocess_and_compute(image_data, caffe_transformer=caffe_transformer, caffe_net=nsfw_net, output_layers=['prob'])
-        print "NSFW score:  " , scores[1]
+            scores = caffe_preprocess_and_compute(image_data, caffe_transformer=caffe_transformer, caffe_net=nsfw_net, output_layers=['prob'])
+        print("NSFW score:  " , scores)
 
     elif args.input_label_file is not None: 
         scores = []
@@ -150,11 +162,27 @@ def main(argv):
         cnf_matrix = confusion_matrix(df['label'], df['NSFW'])
         y = df['label']
         y_pred = df['NSFW']
+        accuracy = accuracy_score(y, y_pred)
+        print("Accuracy: {}".format(accuracy))
         report = classification_report(y, y_pred, target_names=target_names)
-        visualize_result.save_confusion_matrix_classification_report(cnf_matrix=cnf_matrix, 
-                                                                     classification_report=report,
-                                                                     class_names=target_names,
-                                                                     file_name='cnf_matrix')
+        fpr, tpr, thresholds = roc_curve(y, df['scores'], pos_label=1)
+        print("False positive rate: ", fpr)
+        print("True positive rate: ", tpr)
+        print('thresholds: ', thresholds)
+        
+        plt.figure(1)
+        plt.plot([0, 1], [0, 1], 'k--')
+        plt.plot(fpr, tpr, label='Original caffemodel')
+        plt.xlabel('False positive rate')
+        plt.ylabel('True positive rate')
+        plt.title('ROC curve')
+        plt.legend(loc='best')
+        plt.savefig('test.png')
+#         visualize_result.save_confusion_matrix_classification_report(cnf_matrix=cnf_matrix, 
+#                                                                      classification_report=report,
+#                                                                      class_names=target_names,
+#                                                                      file_name='cnf_matrix')
+
         df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
             'result.txt', sep=' ', header=None, index=None)
         print("Test:", len(df))
