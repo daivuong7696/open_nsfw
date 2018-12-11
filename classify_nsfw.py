@@ -68,7 +68,7 @@ def resize_image(data, sz=(256, 256)):
 def caffe_preprocess(caffe_net, image_data,
                      caffe_transformer=None):
 
-    img_data_rs = resize_image(image_data, sz=(256, 256))
+    img_data_rs = resize_image(image_data, sz=(224, 224))
     image = caffe.io.load_image(StringIO(img_data_rs))
 
     H, W, _ = image.shape
@@ -147,9 +147,7 @@ def main(argv):
         help="Path to the input image file"
     )
     parser.add_argument(
-        "--save_cam",
-        default=False,
-        type=bool,
+        "--save_cam_path",
         help="Save class activation map flag"
     )
 
@@ -187,18 +185,19 @@ def main(argv):
                 output_layers=['prob']
             )
             # Calculating class activation map
-            if args.save_cam:
+            if args.save_cam_path is not None:
+                if not os.path.isdir(args.save_cam_path):
+                    os.mkdir(args.save_cam_path)
                 out_layer = 'fc_nsfw'
                 last_conv = 'conv_stage3_block2_branch2c'
                 weights_LR = nsfw_net.params[out_layer][0].data
                 activation_lastconv = nsfw_net.blobs[last_conv].data
-
                 save_CAM_caffe(image_name=args.input_file,
                     image=original_image, fc_weights=weights_LR,
                     activation_lastconv=activation_lastconv,
                     class_dict=class_dict, class_name='sexy',
                     dest_folder='/home/daivuong/Desktop',
-                    image_size=256
+                    image_size=224
                 )
         print("NSFW score: {}".format(scores[1]))
     # Input is a file of many images
@@ -224,25 +223,44 @@ def main(argv):
                 )[1]
                 scores.append(sexy_score)
 
+
                 # Caclulating class activation map
-                if args.save_cam:
+                # It will store predicted images into seperated
+                # folders based on rounded scores (from 0.0 to 1.0)
+                # and these two folders will be stored into ground
+                # truth folder
+                if args.save_cam_path is not None:
+                    if not os.path.isdir(args.save_cam_path):
+                        os.mkdir(args.save_cam_path)
+
+                    # Ground truth folder
+                    label_path = os.path.join(
+                        args.save_cam_path,
+                        str(df.iloc[i, 1])
+                    )
+                    if not os.path.isdir(label_path):
+                        os.mkdir(label_path)
+
+                    # Rounded scores folders
                     dest = os.path.join(
-                        '/home/daivuong/Desktop/test', str(round(sexy_score, 1))
+                        label_path, str(round(sexy_score, 1))
                     )
                     if not os.path.isdir(dest):
                         os.mkdir(dest)
+
+                    # Calculate CAM
                     out_layer = 'fc_nsfw'
                     last_conv = 'conv_stage3_block2_branch2c'
-
                     weights_LR = nsfw_net.params[out_layer][0].data
                     activation_lastconv = nsfw_net.blobs[last_conv].data
+
 
                     save_CAM_caffe(image_name=df.iloc[i, 0],
                         image=original_image, fc_weights=weights_LR,
                         activation_lastconv=activation_lastconv,
                         class_dict=class_dict, class_name='sexy',
                         dest_folder=dest,
-                        image_size=256
+                        image_size=224
                     )
         df['scores'] = scores
         df['NSFW'] = (df['scores'] >= args.threshold)
@@ -259,10 +277,6 @@ def main(argv):
         df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
             'result.txt', sep=' ', header=None, index=None)
         print("Test:", len(df))
-
-    # Scores is the array containing SFW / NSFW image probabilities
-    # scores[1] indicates the NSFW probability
-    
 
 
 
