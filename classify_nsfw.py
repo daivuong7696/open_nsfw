@@ -262,17 +262,38 @@ def main(argv):
                         dest_folder=dest,
                         image_size=224
                     )
+
+
         df['scores'] = scores
         df['NSFW'] = (df['scores'] >= args.threshold)
         # From boolean to int
         df['NSFW'] = df['NSFW'] + 0
 
+        # confusion matrix and classification report visualization
         target_names = ['nosexy', 'sexy']
         cnf_matrix = confusion_matrix(df['label'], df['NSFW'])
+        report = classification_report(y, y_pred, target_names=target_names)
+        visualize_result.save_confusion_matrix_classification_report(cnf_matrix=cnf_matrix, 
+                                                                     classification_report=report,
+                                                                     class_names=target_names,
+                                                                     file_name='cnf_matrix')
+        # Accuracy
         y = df['label']
         y_pred = df['NSFW']
         accuracy = accuracy_score(y, y_pred)
         print("Accuracy: {}".format(accuracy))
+
+        # Plot ROC curve
+		fpr, tpr, thresholds = roc_curve(y, df['scores'], pos_label=1)
+        plt.figure(1)
+        plt.plot([0, 1], [0, 1], 'k--')
+        plt.plot(fpr, tpr, label='ROC curve')
+        plt.xlabel('False positive rate')
+        plt.ylabel('True positive rate')
+        plt.title('ROC curve')
+        plt.legend(loc='best')
+        figname = args.pretrained_model.split('.')[0] + '_roc_curve.png'
+        plt.savefig(figname)
 
         df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
             'result.txt', sep=' ', header=None, index=None)
