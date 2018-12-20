@@ -33,6 +33,7 @@ try:
 except KeyError:
     raise KeyError("Define CAFFE_ROOT in ~/.bashrc")
 
+import visualize_result
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve
 
 
@@ -40,7 +41,6 @@ class_dict = {
     'notsexy': 0,
     'sexy': 1
 }
-
 
 
 def resize_image(data, sz=(256, 256)):
@@ -56,7 +56,7 @@ def resize_image(data, sz=(256, 256)):
     """
     img_data = data
     im = Image.open(StringIO(img_data))
-    
+
     if im.mode != "RGB":
         im = im.convert('RGB')
     imr = im.resize(sz, resample=Image.BILINEAR)
@@ -68,7 +68,7 @@ def resize_image(data, sz=(256, 256)):
 def caffe_preprocess(caffe_net, image_data,
                      caffe_transformer=None):
 
-    img_data_rs = resize_image(image_data, sz=(224, 224))
+    img_data_rs = resize_image(image_data, sz=(256, 256))
     image = caffe.io.load_image(StringIO(img_data_rs))
 
     H, W, _ = image.shape
@@ -150,6 +150,15 @@ def main(argv):
         "--save_cam_path",
         help="Save class activation map flag"
     )
+    parser.add_argument(
+        "--save_to_folder_path",
+        help="Classify images and store them to scores folder"
+    )
+    parser.add_argument(
+        "--save_result_path",
+        default='result',
+        help="Directory where to save ROC curve, confusion matrix"
+    )
 
     args = parser.parse_args()
 
@@ -212,10 +221,14 @@ def main(argv):
             with open(df.iloc[i, 0], 'rb') as f:
                 image_data = f.read()
                 # Preprocessing
-                original_image, transformed_image = caffe_preprocess(
-                    caffe_net=nsfw_net, image_data=image_data,
-                    caffe_transformer=caffe_transformer
-                )
+                try:
+                    original_image, transformed_image = caffe_preprocess(
+                        caffe_net=nsfw_net, image_data=image_data,
+                        caffe_transformer=caffe_transformer
+                    )
+                except:
+                    print("Cannot load images")
+                    continue
                 # Calculating scores
                 sexy_score = caffe_compute(
                     transformed_image=transformed_image, caffe_net=nsfw_net,
@@ -260,31 +273,55 @@ def main(argv):
                         activation_lastconv=activation_lastconv,
                         class_dict=class_dict, class_name='sexy',
                         dest_folder=dest,
-                        image_size=224
+                        image_size=256
                     )
+                if args.save_to_folder_path is not None:
+                    if not os.path.isdir(args.save_to_folder_path):
+                        os.mkdir(args.save_to_folder_path)
+
+                    # Ground truth folder
+                    label_path = os.path.join(
+                        args.save_to_folder_path,
+                        str(df.iloc[i, 1])
+                    )
+                    if not os.path.isdir(label_path):
+                        os.mkdir(label_path)
+
+                    # Rounded scores folders
+                    dest = os.path.join(
+                        label_path, str(round(sexy_score, 1))
+                    )
+                    if not os.path.isdir(dest):
+                        os.mkdir(dest)
+                    src = df.iloc[i, 0]
+                    dst = os.path.join(dest, src.split('/')[-1])
+                    os.rename(src, dst)
+   
 
 
         df['scores'] = scores
         df['NSFW'] = (df['scores'] >= args.threshold)
         # From boolean to int
         df['NSFW'] = df['NSFW'] + 0
+        y = df['label']
+        y_pred = df['NSFW']
 
         # confusion matrix and classification report visualization
         target_names = ['nosexy', 'sexy']
         cnf_matrix = confusion_matrix(df['label'], df['NSFW'])
         report = classification_report(y, y_pred, target_names=target_names)
+        file_name = args.pretrained_model.split('/')[-1].split('.')[0] + '_cnf_matrix.png'
         visualize_result.save_confusion_matrix_classification_report(cnf_matrix=cnf_matrix, 
                                                                      classification_report=report,
                                                                      class_names=target_names,
-                                                                     file_name='cnf_matrix')
+                                                                     file_name=file_name)
+        
         # Accuracy
-        y = df['label']
-        y_pred = df['NSFW']
         accuracy = accuracy_score(y, y_pred)
         print("Accuracy: {}".format(accuracy))
 
         # Plot ROC curve
-		fpr, tpr, thresholds = roc_curve(y, df['scores'], pos_label=1)
+        fpr, tpr, thresholds = roc_curve(y, df['scores'], pos_label=1)
         plt.figure(1)
         plt.plot([0, 1], [0, 1], 'k--')
         plt.plot(fpr, tpr, label='ROC curve')
@@ -292,14 +329,13 @@ def main(argv):
         plt.ylabel('True positive rate')
         plt.title('ROC curve')
         plt.legend(loc='best')
-        figname = args.pretrained_model.split('.')[0] + '_roc_curve.png'
+        figname = args.pretrained_model.split('/')[-1].split('.')[0] + '_roc_curve.png'
         plt.savefig(figname)
-
+        
+        file_name = args.pretrained_model.split('/')[-1].split('.')[0] + '_result.txt'
+        
         df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
-            'result.txt', sep=' ', header=None, index=None)
-        print("Test:", len(df))
-
-
+            file_name, sep=' ', header=None, index=None)
 
 if __name__ == '__main__':
     main(sys.argv)
