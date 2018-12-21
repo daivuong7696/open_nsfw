@@ -34,7 +34,7 @@ except KeyError:
     raise KeyError("Define CAFFE_ROOT in ~/.bashrc")
 
 import visualize_result
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve, precision_recall_curve
 
 
 class_dict = {
@@ -321,19 +321,17 @@ def main(argv):
         print("Accuracy: {}".format(accuracy))
 
         # Plot ROC curve
+        file_name=args.pretrained_model.split('/')[-1].split('.')[0] + '_roc_curve.png'
         fpr, tpr, thresholds = roc_curve(y, df['scores'], pos_label=1)
-        plt.figure(1)
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.plot(fpr, tpr, label='ROC curve')
-        plt.xlabel('False positive rate')
-        plt.ylabel('True positive rate')
-        plt.title('ROC curve')
-        plt.legend(loc='best')
-        figname = args.pretrained_model.split('/')[-1].split('.')[0] + '_roc_curve.png'
-        plt.savefig(figname)
+        visualize_result.plot_roc_curve(fpr, tpr, file_name=file_name)
         
+        # Precision/recall curve
+        file_name = args.pretrained_model.split('/')[-1].split('.')[0] + '_precision_recall.png'
+        precisions, recalls, thresholds = precision_recall_curve(y, df['scores'])
+        visualize_result.plot_precision_recall_vs_threshold(precisions, recalls, thresholds, file_name=file_name)
+
+        # Score result
         file_name = args.pretrained_model.split('/')[-1].split('.')[0] + '_result.txt'
-        
         df[['file_name', 'label', 'scores', 'NSFW']].to_csv(
             file_name, sep=' ', header=None, index=None)
 

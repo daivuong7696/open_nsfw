@@ -137,11 +137,6 @@ def plot_classification_report(ax, classification_report, title='Classification 
     Extension based on https://stackoverflow.com/a/31689645/395857 
     '''
     lines = classification_report.split('\n')
-    for line in lines:
-        print(line)
-    print("line -4: ",lines[-4])
-    print("line -3: ",lines[-3])
-    print("line -2:",lines[-2])
     classes = []
     plotMat = []
     support = []
@@ -149,28 +144,25 @@ def plot_classification_report(ax, classification_report, title='Classification 
     for line in lines[2 : (len(lines))]:
         t = line.strip().split()
         if len(t) < 2: continue
-        if t[0] == 'avg':
+        if t[1] == 'avg':
+            print(t[0])
             temp = []
-            temp.append(t[0]+t[1]+t[2])
+            temp.append(t[0] + ' ' + t[1])
+            temp.append(t[2])
             temp.append(t[3])
             temp.append(t[4])
             temp.append(t[5])
-            temp.append(t[6])
             t = temp
-        print("class name:", t[0], t[1], t[2], t[3])
         classes.append(t[0])
         v = [float(x) for x in t[1: len(t) - 1]]
         support.append(int(t[-1]))
         class_names.append(t[0])
-        print("plotMat", v)
         plotMat.append(v)
     classes = list(reversed(classes))
     plotMat = list(reversed(plotMat))
     support = list(reversed(support))
     class_names = list(reversed(class_names))
 
-    print('plotMat: {0}'.format(plotMat))
-    print('support: {0}'.format(support))
 
     xlabel = 'Metrics'
     ylabel = 'Classes'
@@ -202,3 +194,25 @@ def save_confusion_matrix_classification_report(cnf_matrix, classification_repor
     plot_classification_report(ax1, classification_report)
     plt.tight_layout(h_pad=2.0)
     plt.savefig(file_name, dpi=200, format='png', bbox_inches='tight')
+    plt.clf()
+    
+def plot_precision_recall_vs_threshold(precisions, recalls, thresholds, file_name='precision_recall.png'):
+    plt.plot(thresholds, precisions[:-1], "b--", label="Precision")
+    plt.plot(thresholds, recalls[:-1], "g-", label="Recall")
+    plt.xlabel("Threshold")
+    plt.legend(loc="upper left")
+    plt.ylim([0, 1])
+    plt.savefig(file_name)
+    plt.clf()
+    
+
+def plot_roc_curve(fpr, tpr, label=None, file_name='roc_curve.png'):
+    plt.plot(fpr, tpr, linewidth=2, label=label)
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.axis([0, 1, 0, 1])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.savefig(file_name)
+    plt.clf()
+
+
